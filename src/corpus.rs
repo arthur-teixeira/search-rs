@@ -21,29 +21,40 @@ impl Corpus {
             ));
         }
 
-        let dir = fs::read_dir(path)?;
-        let mut docs: Vec<Document> = Vec::new();
-
         let mut doc_freq = DocFreq::new();
 
-        for entry in dir {
-            let entry = entry?;
-            let path = entry.path();
+        let mut dirs_to_visit = Vec::new();
+        dirs_to_visit.push(path.to_path_buf());
 
-            if path.is_dir() {
-                continue; // TODO: visit nested directories
+        let mut docs: Vec<Document> = Vec::new();
+
+        while dirs_to_visit.len() > 0 {
+            let dir_to_visit = dirs_to_visit.pop().unwrap();
+            let dir = fs::read_dir(dir_to_visit)?;
+
+            for entry in dir {
+                let entry = entry?;
+                let path = entry.path();
+
+                if path.is_dir() {
+                    dirs_to_visit.push(path.to_path_buf());
+                    continue;
+                }
+
+                let doc = match Document::from_file(&path) {
+                    Ok(doc) => doc,
+                    Err(msg) => return Err(Error::new(ErrorKind::InvalidInput, msg)),
+                };
+
+                for k in doc.terms.keys() {
+                    doc_freq
+                        .entry(k.to_string())
+                        .and_modify(|c| *c += 1f32)
+                        .or_insert(1f32);
+                }
+
+                docs.push(doc);
             }
-
-            let doc = match Document::from_file(&path) {
-                Ok(doc) => doc,
-                Err(msg) => return Err(Error::new(ErrorKind::InvalidInput, msg)),
-            };
-
-            for k in doc.terms.keys() {
-                doc_freq.entry(k.to_string()).and_modify(|c| *c += 1f32).or_insert(1f32);
-            }
-
-            docs.push(doc);
         }
 
         Ok(Corpus { docs, doc_freq })
