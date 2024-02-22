@@ -4,7 +4,7 @@ use std::fs;
 use std::path::Path;
 
 pub struct Document {
-    pub file_name: String,
+    pub file_path: String,
     pub terms: HashMap<String, u32>,
     pub term_count: u32,
 }
@@ -27,10 +27,10 @@ impl Document {
             terms.entry(term).and_modify(|c| *c += 1).or_insert(1);
         }
 
-        let file_name = file_path.file_name().unwrap().to_str().unwrap().to_string();
+        let file_path = file_path.to_str().unwrap().to_string();
 
         Ok(Self {
-            file_name,
+            file_path,
             terms,
             term_count,
         })
