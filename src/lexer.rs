@@ -15,14 +15,14 @@ impl<'a> Lexer<'a> {
 
     fn chop_by(&mut self, predicate: fn(char) -> bool) -> String {
         let mut i = 0;
-        while predicate(self.query[i]) {
+        while i < self.query.len() && predicate(self.query[i]) {
             i += 1;
         }
 
         let ret = &self.query[0..i];
         self.query = &self.query[i..];
 
-        return ret.iter().collect();
+        return ret.iter().map(|x| x.to_ascii_lowercase()).collect();
     }
 
     pub fn next_token(&mut self) -> Option<String> {
