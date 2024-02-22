@@ -1,10 +1,12 @@
 mod lexer;
 mod params;
 mod document;
+mod corpus;
 
 use lexer::Lexer;
 use params::Params;
 use document::Document;
+use corpus::Corpus;
 
 use std::env;
 
@@ -12,16 +14,18 @@ fn main() -> Result<(), String> {
     let args: Vec<String> = env::args().collect();
     let params = Params::new(&args)?;
 
-    let lexer = Lexer::new(&params.query);
+    let terms = Lexer::new(&params.query);
 
-    let doc = Document::from_file(params.path)?;
+    let corpus = match Corpus::from_folder(&params.path) {
+        Ok(corpus) => corpus,
+        Err(e) => return Err(e.to_string()),
+    };
 
-    let mut tf = 0f32;
-    for term in lexer {
-        tf += doc.tf(&term);
+    let classification = corpus.classify(terms);
+
+    for (file, score) in classification {
+        println!("{file}: {score}");
     }
-
-    println!("Search weight: {tf}");
 
     Ok(())
 }
