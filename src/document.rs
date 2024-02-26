@@ -1,7 +1,8 @@
 use crate::Lexer;
 use std::collections::HashMap;
-use std::fs;
+use std::io::Read;
 use std::path::Path;
+use std::fs::File;
 
 pub struct Document {
     pub file_path: String,
@@ -13,13 +14,18 @@ impl Document {
     pub fn from_file(file_path: &Path) -> Result<Self, String> {
         let mut terms: HashMap<String, u32> = HashMap::new();
 
-        let file = match fs::read_to_string(file_path) {
-            Ok(bs) => bs,
+        let mut file_content = Vec::new();
+        let mut file = File::open(file_path).expect("Should open file");
+
+        match file.read_to_end(&mut file_content) {
+            Ok(_) => (),
             Err(err) => return Err(err.to_string()),
         };
 
-        let fs: Vec<char> = file.chars().collect();
-        let file_lexer = Lexer::new(&fs);
+        let as_string = String::from_utf8_lossy(&file_content).to_string();
+        let as_chars = as_string.chars().collect::<Vec<char>>();
+
+        let file_lexer = Lexer::new(&as_chars);
 
         let mut term_count = 0;
         for term in file_lexer {
