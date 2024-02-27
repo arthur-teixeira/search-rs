@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 docx-rs = "0.4.8"
 poppler-rs = "0.23.0"
+rust-stemmers = "1.2.0"

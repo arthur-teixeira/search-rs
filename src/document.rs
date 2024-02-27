@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use rust_stemmers::{Algorithm, Stemmer};
 
 pub struct Document {
     pub file_path: String,
@@ -99,12 +100,16 @@ impl Document {
 
         let as_chars = read_text(file_path)?;
 
+        let stemmer = Stemmer::create(Algorithm::English);
+
         let file_lexer = Lexer::new(&as_chars);
 
         let mut term_count = 0;
         for term in file_lexer {
             term_count += 1;
-            terms.entry(term).and_modify(|c| *c += 1).or_insert(1);
+            let stem = stemmer.stem(&term).to_string();
+
+            terms.entry(stem).and_modify(|c| *c += 1).or_insert(1);
         }
 
         let file_path = file_path.to_str().unwrap().to_string();
