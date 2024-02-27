@@ -3,9 +3,9 @@ use crate::Document;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Error, ErrorKind};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::thread;
-use std::sync::{Arc, Mutex, self};
+use std::sync::{Arc, Mutex};
 
 type DocFreq = HashMap<String, f32>;
 
@@ -15,16 +15,16 @@ pub struct Corpus {
 }
 
 impl Corpus {
-    pub fn from_folder(path: &Path) -> Result<Self, Error> {
-        if !path.is_dir() {
+    fn visit_files(initial_path: &Path) -> Result<Vec<PathBuf>, Error> {
+        if !initial_path.is_dir() {
             return Err(Error::new(
-                ErrorKind::InvalidInput,
-                "The provided path should be a directory",
-            ));
+                    ErrorKind::InvalidInput,
+                    "The provided path should be a directory",
+                    ));
         }
 
         let mut dirs_to_visit = Vec::new();
-        dirs_to_visit.push(path.to_path_buf());
+        dirs_to_visit.push(initial_path.to_path_buf());
 
         let mut files_to_visit = Vec::new();
 
@@ -45,6 +45,11 @@ impl Corpus {
             }
         }
 
+        Ok(files_to_visit)
+    }
+
+    pub fn from_folder(path: &Path) -> Result<Self, Error> {
+        let files_to_visit = Corpus::visit_files(path)?;
         let n = files_to_visit.len();
 
         let mut handles = Vec::with_capacity(4);
@@ -104,6 +109,7 @@ impl Corpus {
         let mut result = Vec::new();
         let terms: Vec<String> = terms.collect();
 
+        eprintln!("Searching in {0} documents", self.docs.len());
         for doc in &self.docs {
             let mut score = 0f32;
             for term in &terms {
@@ -114,6 +120,6 @@ impl Corpus {
         }
         result.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
 
-        return result;
+        return result.iter().filter(|(_, score)| score > &0f32).cloned().collect();
     }
 }
