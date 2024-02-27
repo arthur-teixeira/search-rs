@@ -1,4 +1,5 @@
 use crate::Lexer;
+use docx_rs::{self, DocumentChild};
 use poppler;
 use std::collections::HashMap;
 use std::fs::File;
@@ -49,6 +50,31 @@ fn read_pdf(file_path: &Path) -> Result<Vec<char>, String> {
     Ok(full_text)
 }
 
+fn read_docx(file_path: &Path) -> Result<Vec<char>, String> {
+    let mut content = Vec::new();
+    let _ = File::open(file_path).unwrap().read_to_end(&mut content);
+
+    let file = match docx_rs::read_docx(&content) {
+        Ok(doc) => doc,
+        Err(e) => return Err(e.to_string()),
+    };
+
+    let children = file.document.children;
+    let paragraphs = children.iter().filter_map(|c| match c {
+        DocumentChild::Paragraph(content) => Some(content),
+        _ => None,
+    });
+
+    let text = paragraphs
+        .map(|p| p.raw_text())
+        .collect::<Vec<String>>()
+        .join(" ")
+        .chars()
+        .collect();
+
+    Ok(text)
+}
+
 fn read_text(file_path: &Path) -> Result<Vec<char>, String> {
     let extension = file_path
         .extension()
@@ -59,6 +85,7 @@ fn read_text(file_path: &Path) -> Result<Vec<char>, String> {
     match extension {
         "txt" | "" => read_raw_text(file_path),
         "pdf" => read_pdf(file_path),
+        "docx" => read_docx(file_path),
         _ => {
             eprintln!("Warning: Unexpected file type {extension}, reading as raw text");
             read_raw_text(file_path)
