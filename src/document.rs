@@ -1,16 +1,17 @@
-use crate::Lexer;
+use crate::{stemmer, Lexer};
 use docx_rs::{self, DocumentChild};
 use poppler;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
-use rust_stemmers::{Algorithm, Stemmer};
+use whatlang::{detect, Lang};
 
 pub struct Document {
     pub file_path: String,
     pub terms: HashMap<String, u32>,
     pub term_count: u32,
+    pub language: Lang,
 }
 
 fn read_raw_text(file_path: &Path) -> Result<Vec<char>, String> {
@@ -99,15 +100,23 @@ impl Document {
         let mut terms: HashMap<String, u32> = HashMap::new();
 
         let as_chars = read_text(file_path)?;
+        let as_str = as_chars.iter().collect::<String>();
 
-        let stemmer = Stemmer::create(Algorithm::English);
+        let doc_lang_info = detect(&as_str).unwrap();
+
+        let mut doc_lang = doc_lang_info.lang();
+        if !doc_lang_info.is_reliable() {
+            doc_lang = Lang::Eng;
+        }
+
+        let stemmer = stemmer::from_lang(doc_lang);
 
         let file_lexer = Lexer::new(&as_chars);
 
         let mut term_count = 0;
         for term in file_lexer {
             term_count += 1;
-            let stem = stemmer.stem(&term).to_string();
+            let stem = stemmer::stem(&stemmer, &term);
 
             terms.entry(stem).and_modify(|c| *c += 1).or_insert(1);
         }
@@ -118,6 +127,7 @@ impl Document {
             file_path,
             terms,
             term_count,
+            language: doc_lang,
         })
     }
 

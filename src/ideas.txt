@@ -1,0 +1,4 @@
+- Lemmatization
+- Language detection and stemming according to the language
+- Web UI for searching and plotting term frequency
+- Stop words filtering

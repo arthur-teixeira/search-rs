@@ -2,6 +2,7 @@ mod lexer;
 mod params;
 mod document;
 mod corpus;
+mod stemmer;
 
 use lexer::Lexer;
 use params::Params;
