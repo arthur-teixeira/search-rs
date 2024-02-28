@@ -1,11 +1,14 @@
-use crate::{stemmer, Lexer};
+use crate::stemmer::Stem;
+use crate::Lexer;
 use docx_rs::{self, DocumentChild};
 use poppler;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::env;
+use std::ffi::OsStr;
 use std::fs::File;
-use std::io::Read;
-use std::path::Path;
-use whatlang::{detect, Lang};
+use std::io::{Error, Read};
+use std::path::{Path, PathBuf};
+use whatlang::{detect, Info, Lang};
 
 pub struct Document {
     pub file_path: String,
@@ -80,7 +83,7 @@ fn read_docx(file_path: &Path) -> Result<Vec<char>, String> {
 fn read_text(file_path: &Path) -> Result<Vec<char>, String> {
     let extension = file_path
         .extension()
-        .expect("Should be a file")
+        .unwrap_or(OsStr::new(""))
         .to_str()
         .unwrap();
 
@@ -95,6 +98,34 @@ fn read_text(file_path: &Path) -> Result<Vec<char>, String> {
     }
 }
 
+fn stop_words(language: Lang) -> Result<HashSet<String>, Error> {
+    let root = env::current_dir()?;
+
+    let file = match language {
+        Lang::Eng => Some("./stopwords/english"),
+        Lang::Spa => Some("./stopwords/spanish"),
+        Lang::Por => Some("./stopwords/portuguese"),
+        _ => None,
+    }
+    .expect("Should not accept other languages");
+
+    let path = root.join(PathBuf::from(file));
+
+    let mut file = File::open(path).expect("Should have file");
+
+    let mut content = String::new();
+    file.read_to_string(&mut content).unwrap();
+
+    Ok(content.lines().map(|s| s.to_string()).collect())
+}
+
+fn accepted_language(language: whatlang::Lang) -> bool {
+    match language {
+        Lang::Eng | Lang::Spa | Lang::Por => true,
+        _ => false,
+    }
+}
+
 impl Document {
     pub fn from_file(file_path: &Path) -> Result<Self, String> {
         let mut terms: HashMap<String, u32> = HashMap::new();
@@ -102,21 +133,36 @@ impl Document {
         let as_chars = read_text(file_path)?;
         let as_str = as_chars.iter().collect::<String>();
 
-        let doc_lang_info = detect(&as_str).unwrap();
+        let doc_lang = match detect(&as_str) {
+            Some(info) => {
+                if !info.is_reliable() {
+                    Lang::Eng
+                } else {
+                    info.lang()
+                }
+            }
+            None => Lang::Eng,
+        };
 
-        let mut doc_lang = doc_lang_info.lang();
-        if !doc_lang_info.is_reliable() {
-            doc_lang = Lang::Eng;
+        if !accepted_language(doc_lang) {
+            eprintln!("Language {doc_lang} for file {file_path:?} not supported");
+            return Err(format!(""));
         }
 
-        let stemmer = stemmer::from_lang(doc_lang);
+        let stop_words = match stop_words(doc_lang) {
+            Ok(s) => s,
+            Err(e) => return Err(e.to_string()),
+        };
+
+        let stemmer = Stem::from_lang(doc_lang);
 
         let file_lexer = Lexer::new(&as_chars);
+        let valid_terms = file_lexer.filter(|t| !stop_words.contains(t));
 
         let mut term_count = 0;
-        for term in file_lexer {
+        for term in valid_terms {
             term_count += 1;
-            let stem = stemmer::stem(&stemmer, &term);
+            let stem = stemmer.stem(&term);
 
             terms.entry(stem).and_modify(|c| *c += 1).or_insert(1);
         }

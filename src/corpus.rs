@@ -1,5 +1,6 @@
 use crate::lexer::Lexer;
-use crate::{stemmer, Document};
+use crate::stemmer::Stem;
+use crate::Document;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Error, ErrorKind};
@@ -12,6 +13,7 @@ type DocFreq = HashMap<String, f32>;
 pub struct Corpus {
     pub docs: Vec<Document>,
     doc_freq: DocFreq,
+    language: whatlang::Lang,
 }
 
 fn visit_files(initial_path: &Path) -> Result<Vec<PathBuf>, Error> {
@@ -67,7 +69,10 @@ impl Corpus {
                 for path in files {
                     let doc = match Document::from_file(&path) {
                         Ok(doc) => doc,
-                        Err(msg) => return Err(Error::new(ErrorKind::InvalidInput, msg)),
+                        Err(e) => {
+                            eprintln!("ERROR: {e}. Skipping file");
+                            continue;
+                        }
                     };
 
                     let mut freq_table = freq_lock.lock().unwrap();
@@ -82,7 +87,7 @@ impl Corpus {
                     docs.push(doc);
                 }
 
-                Ok(docs)
+                docs
             });
 
             handles.push(handle);
@@ -90,15 +95,17 @@ impl Corpus {
 
         let mut docs = Vec::new();
         for handle in handles {
-            let result = handle.join().unwrap()?;
+            let result = handle.join().unwrap();
             docs.extend(result);
         }
 
         let val = freq_arc.lock().unwrap().clone();
+        let language = docs[0].language; // Assumes all documents are in the same language
 
         Ok(Corpus {
             docs,
             doc_freq: val,
+            language,
         })
     }
 
@@ -111,14 +118,14 @@ impl Corpus {
         let mut result = Vec::new();
         let terms: Vec<String> = terms.collect();
 
-        // Assumes all documents are in the same language
-        let stemmer = stemmer::from_lang(self.docs[0].language);
+        let stemmer = Stem::from_lang(self.language);
 
         eprintln!("Searching in {0} documents", self.docs.len());
         for doc in &self.docs {
             let mut score = 0f32;
+
             for term in &terms {
-                let stem = stemmer::stem(&stemmer, &term);
+                let stem = stemmer.stem(&term);
                 let tf = doc.tf(&stem);
                 let idf = self.idf(&stem);
                 score += tf * idf;
