@@ -3,7 +3,6 @@ mod params;
 mod document;
 mod corpus;
 mod stemmer;
-mod stop_words;
 
 use lexer::Lexer;
 use params::Params;

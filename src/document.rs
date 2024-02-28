@@ -4,12 +4,13 @@ use docx_rs::{self, DocumentChild};
 use poppler;
 use std::collections::{HashMap, HashSet};
 use std::env;
-use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{Error, Read};
 use std::path::{Path, PathBuf};
-use whatlang::{detect, Info, Lang};
+use whatlang::{detect, Lang};
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize)]
 pub struct Document {
     pub file_path: String,
     pub terms: HashMap<String, u32>,
@@ -83,18 +84,13 @@ fn read_docx(file_path: &Path) -> Result<Vec<char>, String> {
 fn read_text(file_path: &Path) -> Result<Vec<char>, String> {
     let extension = file_path
         .extension()
-        .unwrap_or(OsStr::new(""))
-        .to_str()
-        .unwrap();
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
 
     match extension {
-        "txt" | "" => read_raw_text(file_path),
         "pdf" => read_pdf(file_path),
         "docx" => read_docx(file_path),
-        _ => {
-            eprintln!("Warning: Unexpected file type {extension}, reading as raw text");
-            read_raw_text(file_path)
-        }
+        "txt" | "" | _ => read_raw_text(file_path),
     }
 }
 

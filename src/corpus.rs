@@ -1,19 +1,22 @@
 use crate::lexer::Lexer;
 use crate::stemmer::Stem;
 use crate::Document;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use whatlang::Lang;
 
 type DocFreq = HashMap<String, f32>;
 
+#[derive(Serialize, Deserialize)]
 pub struct Corpus {
-    pub docs: Vec<Document>,
+    pub docs: HashMap<PathBuf, Document>,
     doc_freq: DocFreq,
-    language: whatlang::Lang,
+    language: Lang,
 }
 
 fn visit_files(initial_path: &Path) -> Result<Vec<PathBuf>, Error> {
@@ -42,6 +45,16 @@ fn visit_files(initial_path: &Path) -> Result<Vec<PathBuf>, Error> {
                 continue;
             }
 
+            let dot_file = path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(|s| s.starts_with("."))
+                .unwrap_or(false);
+
+            if dot_file {
+                continue;
+            }
+
             files_to_visit.push(path);
         }
     }
@@ -51,6 +64,13 @@ fn visit_files(initial_path: &Path) -> Result<Vec<PathBuf>, Error> {
 
 impl Corpus {
     pub fn from_folder(path: &Path) -> Result<Self, Error> {
+        let cache_file = path.join(".cache.json");
+
+        if cache_file.exists() {
+            let ret: Self = serde_json::from_reader(fs::File::open(cache_file)?)?;
+            return Ok(ret);
+        }
+
         let num_threads = thread::available_parallelism()?;
 
         let mut handles = Vec::with_capacity(num_threads.into());
@@ -63,7 +83,7 @@ impl Corpus {
             let files_to_visit = files_to_visit.clone();
 
             let handle = thread::spawn(move || {
-                let mut docs: Vec<Document> = Vec::new();
+                let mut docs: HashMap<PathBuf, Document> = HashMap::new();
                 let files = files_to_visit[(i * n) / 4..((i + 1) * n) / 4].to_vec();
 
                 for path in files {
@@ -84,7 +104,7 @@ impl Corpus {
                             .or_insert(1f32);
                     }
 
-                    docs.push(doc);
+                    docs.insert(path, doc);
                 }
 
                 docs
@@ -93,20 +113,24 @@ impl Corpus {
             handles.push(handle);
         }
 
-        let mut docs = Vec::new();
+        let mut docs = HashMap::new();
         for handle in handles {
             let result = handle.join().unwrap();
             docs.extend(result);
         }
 
         let val = freq_arc.lock().unwrap().clone();
-        let language = docs[0].language; // Assumes all documents are in the same language
+        let language = docs.values().next().unwrap().language; // Assumes all documents are in the same language
 
-        Ok(Corpus {
+        let ret = Corpus {
             docs,
             doc_freq: val,
             language,
-        })
+        };
+
+        serde_json::to_writer(fs::File::create(cache_file)?, &ret)?;
+
+        Ok(ret)
     }
 
     fn idf(&self, term: &String) -> f32 {
@@ -121,7 +145,7 @@ impl Corpus {
         let stemmer = Stem::from_lang(self.language);
 
         eprintln!("Searching in {0} documents", self.docs.len());
-        for doc in &self.docs {
+        for (_, doc) in &self.docs {
             let mut score = 0f32;
 
             for term in &terms {
