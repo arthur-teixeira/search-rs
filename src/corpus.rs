@@ -6,11 +6,11 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{channel, Sender};
 use std::thread;
 use whatlang::Lang;
 
-type DocFreq = HashMap<String, f32>;
+type DocFreq = HashMap<String, usize>;
 
 #[derive(Serialize, Deserialize)]
 pub struct Corpus {
@@ -19,7 +19,7 @@ pub struct Corpus {
     language: Lang,
 }
 
-fn visit_files(initial_path: &Path) -> Result<Vec<PathBuf>, Error> {
+fn visit_files(initial_path: &Path, threads: &Vec<Sender<PathBuf>>) -> Result<(), Error> {
     if !initial_path.is_dir() {
         return Err(Error::new(
             ErrorKind::InvalidInput,
@@ -30,7 +30,8 @@ fn visit_files(initial_path: &Path) -> Result<Vec<PathBuf>, Error> {
     let mut dirs_to_visit = Vec::new();
     dirs_to_visit.push(initial_path.to_path_buf());
 
-    let mut files_to_visit = Vec::new();
+    let mut i = 0;
+    let num_threads = threads.len();
 
     while dirs_to_visit.len() > 0 {
         let dir_to_visit = dirs_to_visit.pop().unwrap();
@@ -55,11 +56,45 @@ fn visit_files(initial_path: &Path) -> Result<Vec<PathBuf>, Error> {
                 continue;
             }
 
-            files_to_visit.push(path);
+            threads[i % num_threads].send(path).unwrap();
+            i += 1;
         }
     }
 
-    Ok(files_to_visit)
+    Ok(())
+}
+
+fn spawn_threads(doc_snd: Sender<(PathBuf, Document)>) -> Vec<Sender<PathBuf>> {
+    let num_threads: usize = thread::available_parallelism().unwrap().into();
+
+    let mut worker_thread_handles = Vec::with_capacity(num_threads);
+
+    for _ in 0..num_threads.into() {
+        let sender = doc_snd.clone();
+
+        let (path_snd, path_recv) = channel::<PathBuf>();
+        worker_thread_handles.push(path_snd);
+
+        thread::spawn(move || {
+            for path in path_recv {
+                let doc = match Document::from_file(&path) {
+                    Ok(doc) => doc,
+                    Err(e) => {
+                        eprintln!("ERROR: {e}. Skipping file");
+                        continue;
+                    }
+                };
+
+                sender.send((path, doc)).unwrap();
+            }
+
+            drop(sender);
+        });
+    }
+
+    drop(doc_snd);
+
+    worker_thread_handles
 }
 
 impl Corpus {
@@ -71,60 +106,30 @@ impl Corpus {
             return Ok(ret);
         }
 
-        let num_threads = thread::available_parallelism()?;
+        let mut doc_freq = DocFreq::new();
+        let (doc_snd, doc_recv) = channel::<(PathBuf, Document)>();
 
-        let mut handles = Vec::with_capacity(num_threads.into());
-        let freq_arc = Arc::new(Mutex::new(DocFreq::new()));
-        let files_to_visit = visit_files(path)?;
-        let n = files_to_visit.len();
+        let worker_thread_handles = spawn_threads(doc_snd);
 
-        for i in 0..num_threads.into() {
-            let freq_lock = freq_arc.clone();
-            let files_to_visit = files_to_visit.clone();
+        visit_files(path, &worker_thread_handles)?;
 
-            let handle = thread::spawn(move || {
-                let mut docs: HashMap<PathBuf, Document> = HashMap::new();
-                let files = files_to_visit[(i * n) / 4..((i + 1) * n) / 4].to_vec();
-
-                for path in files {
-                    let doc = match Document::from_file(&path) {
-                        Ok(doc) => doc,
-                        Err(e) => {
-                            eprintln!("ERROR: {e}. Skipping file");
-                            continue;
-                        }
-                    };
-
-                    let mut freq_table = freq_lock.lock().unwrap();
-
-                    for k in doc.terms.keys() {
-                        freq_table
-                            .entry(k.to_string())
-                            .and_modify(|c| *c += 1f32)
-                            .or_insert(1f32);
-                    }
-
-                    docs.insert(path, doc);
-                }
-
-                docs
-            });
-
-            handles.push(handle);
+        for handle in worker_thread_handles {
+            drop(handle);
         }
 
         let mut docs = HashMap::new();
-        for handle in handles {
-            let result = handle.join().unwrap();
-            docs.extend(result);
+        for (path, doc) in doc_recv {
+            for term in doc.terms.keys() {
+                doc_freq.entry(term.to_string()).and_modify(|v| *v += 1).or_insert(1);
+            }
+            docs.insert(path, doc);
         }
 
-        let val = freq_arc.lock().unwrap().clone();
-        let language = docs.values().next().unwrap().language; // Assumes all documents are in the same language
+        let language = docs.iter().next().unwrap().1.language;
 
         let ret = Corpus {
             docs,
-            doc_freq: val,
+            doc_freq,
             language,
         };
 
@@ -134,8 +139,8 @@ impl Corpus {
     }
 
     fn idf(&self, term: &String) -> f32 {
-        let df = self.doc_freq.get(term).unwrap_or(&1f32);
-        (self.docs.len() as f32 / df).log10()
+        let df = self.doc_freq.get(term).unwrap_or(&1);
+        (self.docs.len() as f32 / (*df as f32)).log10()
     }
 
     pub fn classify(&self, terms: Lexer) -> Vec<(String, f32)> {
