@@ -3,7 +3,8 @@ mod document;
 mod lexer;
 mod stemmer;
 
-use actix_web::{get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use actix_web::{get, web, App, HttpResponse, HttpServer, Responder};
+
 use corpus::Corpus;
 use document::Document;
 use lexer::Lexer;
@@ -50,7 +51,6 @@ async fn query(data: web::Data<Corpus>, search: web::Query<Search>) -> impl Resp
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
-        eprintln!("Starting server");
         let corpus = match init_state() {
             Ok(c) => c,
             Err(e) => {
