@@ -19,6 +19,12 @@ pub struct Corpus {
     language: Lang,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct ClassifyResult {
+    path: String,
+    score: f32,
+}
+
 fn visit_files(initial_path: &Path, threads: &Vec<Sender<PathBuf>>) -> Result<(), Error> {
     if !initial_path.is_dir() {
         return Err(Error::new(
@@ -111,7 +117,7 @@ impl Corpus {
 
         let worker_thread_handles = spawn_threads(doc_snd);
 
-        visit_files(path, &worker_thread_handles)?;
+        visit_files(&path, &worker_thread_handles)?;
 
         for handle in worker_thread_handles {
             drop(handle);
@@ -120,7 +126,10 @@ impl Corpus {
         let mut docs = HashMap::new();
         for (path, doc) in doc_recv {
             for term in doc.terms.keys() {
-                doc_freq.entry(term.to_string()).and_modify(|v| *v += 1).or_insert(1);
+                doc_freq
+                    .entry(term.to_string())
+                    .and_modify(|v| *v += 1)
+                    .or_insert(1);
             }
             docs.insert(path, doc);
         }
@@ -143,7 +152,7 @@ impl Corpus {
         (self.docs.len() as f32 / (*df as f32)).log10()
     }
 
-    pub fn classify(&self, terms: Lexer) -> Vec<(String, f32)> {
+    pub fn classify(&self, terms: Lexer) -> Vec<ClassifyResult> {
         let mut result = Vec::new();
         let terms: Vec<String> = terms.collect();
 
@@ -164,10 +173,13 @@ impl Corpus {
         }
         result.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
 
-        return result
+        result
             .iter()
             .filter(|(_, score)| score > &0f32)
-            .cloned()
-            .collect();
+            .map(|(path, score)| ClassifyResult {
+                path: path.to_string(),
+                score: *score,
+            })
+            .collect()
     }
 }

@@ -1,2 +1,12 @@
 - Web UI for searching and plotting term frequency
-- Stop words filtering
+  - Endpoints
+    - Build corpus from folder:
+      Should receive a folder path and a name and build a corpus from it, saving it into memory
+    - Get available corpi:
+      Should return a list of available corpi
+    - Query corpus:
+      Should receive a corpus name and a query and return the list of documents that match the query, ordered by relevance
+    - Plot term frequency:
+      Should receive a corpus name and return a plot of the term frequency in the corpus
+      
+      
