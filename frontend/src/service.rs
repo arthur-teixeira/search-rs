@@ -4,10 +4,10 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::*;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SearchResult {
-    path: String,
-    score: f32,
+    pub path: String,
+    pub score: f32,
 }
 
 async fn do_request(method: &str, url: &str) -> Result<JsValue, JsValue> {
@@ -33,10 +33,14 @@ async fn do_request(method: &str, url: &str) -> Result<JsValue, JsValue> {
     }
 }
 
-const BASE_URL: &str = "localhost:8080";
+const BASE_URL: &str = "http://localhost:3000";
 
-pub async fn search(query: &str) -> Result<Vec<SearchResult>, String> {
-    let url = format!("{}?query={}", BASE_URL, query);
+pub async fn search(query: String) -> Result<Vec<SearchResult>, String> {
+    let url = format!("{}/search?query={}", BASE_URL, query);
+
+    if query == "" {
+        return Ok(vec![]);
+    }
 
     let result = match do_request("GET", &url).await {
         Ok(r) => r,

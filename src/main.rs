@@ -3,6 +3,7 @@ mod document;
 mod lexer;
 mod stemmer;
 
+use actix_cors::Cors;
 use actix_web::{get, web, App, HttpResponse, HttpServer, Responder};
 
 use corpus::Corpus;
@@ -40,6 +41,7 @@ struct Search {
 
 #[get("/search")]
 async fn query(data: web::Data<Corpus>, search: web::Query<Search>) -> impl Responder {
+    println!("Query: {}", search.query);
     let chars = search.query.chars().collect::<Vec<char>>();
     let lexer = Lexer::new(&chars);
 
@@ -59,9 +61,14 @@ async fn main() -> std::io::Result<()> {
             }
         };
 
-        App::new().app_data(web::Data::new(corpus)).service(query)
+        let cors = Cors::permissive();
+
+        App::new()
+            .wrap(cors)
+            .app_data(web::Data::new(corpus))
+            .service(query)
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind(("127.0.0.1", 3000))?
     .run()
     .await?;
 

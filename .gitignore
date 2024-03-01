@@ -1,3 +1,7 @@
 /target
 Cargo.lock
 /sources
+/frontend/Cargo.lock
+/frontend/target
+/frontend/sources
+/frontend/dist
